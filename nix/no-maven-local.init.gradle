@@ -1,0 +1,31 @@
+// Strip mavenLocal() from every repository container during the Nix build.
+//
+// Every build script in this repo lists `mavenLocal()` first. On the machine
+// where the dependency lockfile is recorded, that resolves artifacts straight
+// out of ~/.m2 — bypassing the recording proxy, so they never make it into
+// deps.json. The sandboxed offline build then can't find them (its ~/.m2 is
+// empty). Removing mavenLocal forces every artifact through the proxy during
+// recording, and through the pinned lockfile during the offline build.
+//
+// Covers all four places repositories are declared: settings-level plugin
+// management and dependency resolution management, and each project's
+// buildscript and main repositories.
+
+def isMavenLocal = { repo ->
+  repo instanceof org.gradle.api.artifacts.repositories.MavenArtifactRepository &&
+    repo.url != null && repo.url.scheme == 'file'
+}
+
+settingsEvaluated { settings ->
+  settings.pluginManagement.repositories.removeAll(isMavenLocal)
+  try {
+    settings.dependencyResolutionManagement.repositories.removeAll(isMavenLocal)
+  } catch (ignored) {
+    // dependencyResolutionManagement may be unconfigured; nothing to strip.
+  }
+}
+
+allprojects { project ->
+  project.buildscript.repositories.removeAll(isMavenLocal)
+  project.repositories.removeAll(isMavenLocal)
+}
